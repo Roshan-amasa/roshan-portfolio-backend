@@ -12,7 +12,7 @@ Globals:
 
 Resources:
 
-  MyWebsite:
+  RoshanWebsite:
     Type: AWS::S3::Bucket
     Properties:
       AccessControl: PublicRead
@@ -34,9 +34,9 @@ Resources:
             Resource: !Join
               - ""
               - - "arn:aws:s3:::"
-                - !Ref MyWebsite
+                - !Ref RoshanWebsite
                 - /*
-      Bucket: !Ref MyWebsite 
+      Bucket: !Ref RoshanWebsite 
 
   MyRoute53Record:
     Type: "AWS::Route53::RecordSetGroup"
