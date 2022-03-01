@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  cloud-resume-challenge
+
+  Sample SAM Template for cloud-resume-challenge
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+
+Resources:
+
+  MyWebsite:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      BucketName: resume-amasa
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      PolicyDocument:
+        Id: MyPolicy
+        Version: 2012-10-17
+        Statement:
+          - Sid: PublicReadForGetBucketObjects
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Join
+              - ""
+              - - "arn:aws:s3:::"
+                - !Ref MyWebsite
+                - /*
+      Bucket: !Ref MyWebsite 
+
+  MyRoute53Record:
+    Type: "AWS::Route53::RecordSetGroup"
+    Properties:
+      HostedZoneId: Z02973132QRE8V8HQ2798 # TODO: Don't hardcode me #Z02973132QRE8V8HQ2798
+      RecordSets:
+        - Name: resume.roshanamasa.com # TODO: Don't hardcode me
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2
+            DNSName: !GetAtt MyDistribution.DomainName 
+  
+      
+  MyDistribution:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig:
+        DefaultCacheBehavior:
+          ViewerProtocolPolicy: allow-all
+          TargetOriginId: resume-amasa.s3-website.eu-central-1.amazonaws.com
+          DefaultTTL: 0
+          MinTTL: 0
+          MaxTTL: 0
+          ForwardedValues:
+            QueryString: false
+        Origins:
+          - DomainName: !Sub resume-amasa.s3.${AWS::Region}.amazonaws.com
+            Id: resume-amasa.s3-website.eu-central-1.amazonaws.com
+            S3OriginConfig: 
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${OriginAccessIdentity}'
+        Enabled: "true"
+        DefaultRootObject: index.html
+  
+  OriginAccessIdentity:
+    Type: 'AWS::CloudFront::CloudFrontOriginAccessIdentity'
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: 'Access S3 bucket content only through CloudFront'   
+
+
+
+  GetCountFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: counter/
+      Handler: app.get_count_handler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+      Events:
+        GetCount:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /count
+            Method: get
+      Environment:
+        Variables:
+          DB_NAME: !Select [1, !Split ['/', !GetAtt VisitorDB.Arn]] 
+          DB_KEY: visitors
+      Policies:
+        - Statement:
+          - Sid: CRCDynamoDBGetCountPolicy
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+            Resource: !GetAtt VisitorDB.Arn
+  
+  AddCountFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: counter/
+      Handler: app.add_count_handler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+      Events:
+        AddCount:
+          Type: Api
+          Properties:
+            Path: /add
+            Method: get
+      Environment:
+        Variables:
+          DB_NAME: !Select [1, !Split ['/', !GetAtt VisitorDB.Arn]] 
+          DB_KEY: visitors
+      Policies:
+        - Statement:
+          - Sid: CRCDynamoDBAddCountPolicy
+            Effect: Allow
+            Action:
+              - dynamodb:UpdateItem
+            Resource: !GetAtt VisitorDB.Arn
+
+  VisitorDB:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: name
+        Type: String
+      TableName: crc-aws-db
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1        
+
+
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  AddCountApi:
+    Description: "API Gateway endpoint URL for Prod stage for add count function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/add"
+  GetCountApi:
+    Description: "API Gateway endpoint URL for Prod stage for get count function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/count"
+  VisitorCounterApi:
+    Description: "Base API Gateway URL for Prod stage for visitor counter API"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
